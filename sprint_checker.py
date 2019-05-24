@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 # Globals
 DATE_FORMAT = '%Y-%m-%d'
-START_DATE = datetime.strptime('2019-05-03', DATE_FORMAT) + timedelta(seconds = 49500)  # Friday at 13:45
+START_DATE = datetime.strptime('2019-05-03', DATE_FORMAT) + timedelta(seconds=49500)  # Friday at 13:45
 SPRINT_LENGTH = 2 * 7
 GITLAB_HOST = "https://gitlab.ewi.tudelft.nl"
 
@@ -32,10 +32,13 @@ ewi_gitlab = gitlab.Gitlab(GITLAB_HOST, private_token=args.private_token)
 project = ewi_gitlab.projects.get(args.project_id)
 
 
-# Checks whether the given date is within the i-th sprint, 14-day sprints
+# Checks whether the given date is within the i-th sprint
 def is_within_sprint(date, start, i, day_offset = 0):
     return start + timedelta(days=(i - 1) * SPRINT_LENGTH + day_offset) < date < start + timedelta(days=i * SPRINT_LENGTH + day_offset)
 
+# Checks whether the given date is before start of the i-th sprint
+def is_before_sprint(date, start, i, day_offset = 0):
+    return date < start + timedelta(days=(i - 1) * SPRINT_LENGTH + day_offset)
 
 def mean(L):
     return round(sum(L) / len(L))
@@ -60,31 +63,29 @@ for member in project.members.all(all=True):
 
 # Iterate over issues
 for issue in project.issues.list(all=True):
-    
+
     # Skip if the issue was closed in the previous sprint
     if issue.state == 'closed':
         issue_close_date = datetime.strptime(issue.closed_at.split("T")[0], DATE_FORMAT)
         if is_within_sprint(issue_close_date, START_DATE, args.sprint_number - 1):
             continue
-    
-    # Only add estimate if the issue was created during the current sprint, before the new planning (hence the given offset argument -1)
+
+    # Only add estimate if the issue was created before the next sprint, before the new planning (hence the given offset argument -1)
     issue_date = datetime.strptime(issue.created_at.split("T")[0], DATE_FORMAT)
-    if is_within_sprint(issue_date, START_DATE, args.sprint_number, -1):
+    if is_before_sprint(issue_date, START_DATE, args.sprint_number + 1, -1):
         for assignee in issue.assignees:
             if args.e:
                 members[assignee['username']]['time_estimate'] += issue.attributes['time_stats']['time_estimate']
             else:
                 members[assignee['username']]['time_estimate'] += (issue.attributes['time_stats']['time_estimate'] / len(issue.assignees))
-    
+
     # Iterate over issue notes, since they contain the "added .... of time spent" messages
     notes = issue.notes.list()
     for note in notes:
-        
-        # Skip if the note was not made during the current sprint
+
+        # Extract note date
         note_date = datetime.strptime(note.created_at.split("T")[0], DATE_FORMAT)
-        if not is_within_sprint(note_date, START_DATE, args.sprint_number):
-            continue
-        
+
         # Extract time spent info from note bodies
         if re.search(r'added .* of time spent at', note.body):
             h_string = re.search(r'\b[0-9]{1,3}h\b', note.body)
@@ -96,7 +97,12 @@ for issue in project.issues.list(all=True):
             for t in time_map:
                 if t is not None:
                     try:
-                        time += time_map[t] * int(t.group(0)[:-1])
+                        # If the note was made during the current sprint, we increment the time spent
+                        if is_within_sprint(note_date, START_DATE, args.sprint_number):
+                            time += time_map[t] * int(t.group(0)[:-1])
+                        # If it was made before, we subtract from the estimate
+                        elif is_before_sprint(note_date, START_DATE, args.sprint_number):
+                            members[note.author['username']]['time_estimate'] -= time_map[t] * int(t.group(0)[:-1])
                     except:
                         print("Warning: Could not parse time from note")
 
