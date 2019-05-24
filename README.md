@@ -9,7 +9,7 @@ The current version is adapted for use on TU Delft, but this will be generalized
 
 ## Instructions (Windows)
 - Install Python 3: https://www.python.org/downloads/
-- Run the following command to install the Gitlab Python API: `pip install gitlab-python`
+- Run the following command to install the Gitlab Python API: `pip install python-gitlab`
 - Run `python sprint_checker.py -h` for further usage
 
 The tool requires a Gitlab access token, which you can create at your user settings.
